@@ -1,5 +1,5 @@
 /* expeditor.c
- * Copyright 1984-2016 Cisco Systems, Inc.
+ * Copyright 1984-2017 Cisco Systems, Inc.
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -546,7 +546,9 @@ static void s_ee_write_char(wchar_t c) {
 #include <sys/ioctl.h>
 #include <wchar.h>
 #include <locale.h>
+#ifndef __GLIBC__
 #include <xlocale.h>
+#endif
 
 #if defined(TIOCGWINSZ) && defined(SIGWINCH) && defined(EINTR)
 #define HANDLE_SIGWINCH
@@ -886,8 +888,10 @@ static void s_ee_line_feed(void) {
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <sys/select.h>
+#endif /* LIBX11 */
 
 static ptr s_ee_get_clipboard(void) {
+#ifdef LIBX11
   static enum {UNINITIALIZED, INITIALIZED, FAILED} status = UNINITIALIZED;
   static int (*pXConvertSelection)(Display *, Atom, Atom, Atom, Window, Time);
   static int (*pXPending)(Display *display);
@@ -897,9 +901,11 @@ static ptr s_ee_get_clipboard(void) {
 
   static Display *D;
   static Window R, W;
+#endif /* LIBX11 */
 
   ptr p = S_G.null_string;
 
+#ifdef LIBX11
   if (status == UNINITIALIZED) {
     char *display_name;
     void *handle;
@@ -984,6 +990,7 @@ static ptr s_ee_get_clipboard(void) {
       }
     }
   }
+#endif /* LIBX11 */
 
 #ifdef MACOSX
 #define PBPASTEBUFSIZE 1024
@@ -1011,11 +1018,6 @@ static ptr s_ee_get_clipboard(void) {
 
   return p;
 }
-#else /* LIBX11 */
-static ptr s_ee_get_clipboard(void) {
-  return S_G.null_string;
-}
-#endif
 
 static void s_ee_write_char(wchar_t wch) {
   locale_t old; char buf[MB_LEN_MAX]; size_t n;

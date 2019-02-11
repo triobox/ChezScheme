@@ -1,4 +1,4 @@
-% Copyright 2005-2016 Cisco Systems, Inc.
+% Copyright 2005-2018 Cisco Systems, Inc.
 %
 % Licensed under the Apache License, Version 2.0 (the "License");
 % you may not use this file except in compliance with the License.
@@ -982,6 +982,24 @@ by absolute path names.
 
 %----------------------------------------------------------------------------
 \entryheader
+\formdef{load-compiled-from-port}{\categoryprocedure}{(load-compiled-from-port \var{input-port})}
+\returns result of the last compiled expression
+\listlibraries
+\endentryheader
+
+\noindent
+\scheme{load-compiled-from-port} reads and evaluates the object-code contents
+of \var{input-port} as previously created by functions like \scheme{compile-file},
+\scheme{compile-script}, \scheme{compile-library}, and
+\scheme{compile-to-port}.
+
+The return value is the value of the last expression whose compiled
+form is in \var{input-port}. If \var{input-port} is empty, then the
+result value is unspecified.
+
+
+%----------------------------------------------------------------------------
+\entryheader
 \formdef{visit}{\categoryprocedure}{(visit \var{path})}
 \returns unspecified
 \listlibraries
@@ -1108,6 +1126,7 @@ cp0-effort-limit
 cp0-score-limit
 cp0-outer-unroll-limit
 generate-inspector-information
+generate-procedure-source-information
 compile-profile
 generate-interrupt-trap
 enable-cross-library-optimization
@@ -1222,7 +1241,7 @@ command-line option.
 \endentryheader
 
 These procedures are like their non-\scheme{maybe} counterparts but
-do not compile the source file if the object file is out-of-date.
+compile the source file only if the object file is out-of-date.
 An object file \var{X} is considered out-of-date if it does not exist or
 if it is older than the source file or any files included (via \scheme{include})
 when \var{X} was created.
@@ -1330,7 +1349,7 @@ and requirements of libraries to be loaded at run time,
 \scheme{compile-whole-program} discards unused code and optimizes
 across program and library boundaries, potentially reducing program
 load time, run time, and memory requirements.
-Some optimization also occurs even accross the boundaries of libraries
+Some optimization also occurs even across the boundaries of libraries
 that are not incorporated into the output, though this optimization
 is limited in nature.
 
@@ -1835,7 +1854,7 @@ If instead this file were compiled, using \scheme{compile-file}, the
 compiler would arrange to define \scheme{mvlet} before continuing
 with the expansion and evaluation of the \scheme{mvlet} expression,
 but it would not arrange to define \scheme{nodups?}.
-Thus the expansion of the \scheme{mvlet} expression would fails.
+Thus the expansion of the \scheme{mvlet} expression would fail.
 
 In this case it does not help to evaluate the syntactic extension alone.
 A solution in this case would be to move the definition of
@@ -2394,6 +2413,21 @@ is included in a file, generation of inspector information will be
 disabled only for the remainder of that particular file.
 
 %----------------------------------------------------------------------------
+\entryheader\label{desc:generate-procedure-source-information}
+\formdef{generate-procedure-source-information}{\categorythreadparameter}{generate-procedure-source-information}
+\listlibraries
+\endentryheader
+
+\noindent
+When \scheme{generate-inspector-information} is set to \scheme{#f} and
+this parameter is set to \scheme{#t}, then a source location is preserved
+for a procedure, even though other inspector information is not preserved.
+Source information provides a small amount of debugging support at a
+much lower cost in memory and object-file size than full inspector information.
+If this parameter is changed during the compilation of a file, the
+original value will be restored.
+
+%----------------------------------------------------------------------------
 \entryheader
 \formdef{enable-cross-library-optimization}{\categorythreadparameter}{enable-cross-library-optimization}
 \listlibraries
@@ -2633,6 +2667,34 @@ reach this decision if the effort and outer unroll limits are large.
 
 %----------------------------------------------------------------------------
 \entryheader
+\formdef{commonization-level}{\categorythreadparameter}{commonization-level}
+\listlibraries
+\endentryheader
+
+After running the main source optimization pass (cp0) for the last time, the
+compiler optionally runs a \emph{commonization} pass.
+The pass commonizes the code for lambda expressions that have
+identical structure by abstracting differences at certain leaves
+of the program, namely constants, references to unassigned variables,
+and references to primitives.
+The parameter \scheme{commonization-level} controls whether commonization
+is run and, if so, how aggressive it is.
+Its value must be a nonnegative exact integer ranging from 0 through 9.
+When the parameter is set to 0, the default, commonization is not run.
+Otherwise, higher values result in more commonization.
+
+Commonization can undo some of the effects of cp0's inlining, can
+add run-time overhead, and can complicate debugging, particularly
+at higher commonization levels, which is why it is disabled by
+default.
+On the other hand, for macros or other meta programs that can
+generate large, mostly similar lambda expressions, enabling
+commonization can result in significant savings in object-code size
+and even reduce run-time overhead by making more efficient use of
+instruction caches.
+
+%----------------------------------------------------------------------------
+\entryheader
 \formdef{undefined-variable-warnings}{\categorythreadparameter}{undefined-variable-warnings}
 \listlibraries
 \endentryheader
@@ -2767,7 +2829,7 @@ or to the boolean value \scheme{#t}.
 The profile information can be dumped via:
 
 \begin{description}
-\item[\scheme{profile-dump-html}]\index{\scheme{profile-dump=html}}
+\item[\scheme{profile-dump-html}]\index{\scheme{profile-dump-html}}
 in HTML format to allow the programmer to visualize how
 often each expression is executed using a color-coding system that
 makes it easy to spot ``hot spots,''
@@ -2968,6 +3030,16 @@ The code generated when \scheme{compile-profile} is non-false is
 larger and less efficient, so this parameter should be set only
 when profile information is needed.
 
+The profile counters for code compiled when profile instrumentation
+is enabled are retained indefinitely, even if the code with which
+they are associated is reclaimed by the garbage collector.
+This results in more complete and accurate profile data but can lead
+to space leaks in programs that dynamically generate or load code.
+Such programs can avoid the potential space leak by releasing the
+counters explicitly via the procedure
+\index{\scheme{profile-release-counters}}\scheme{profile-release-counters}.
+
+
 \entryheader
 \formdef{profile}{\categorysyntax}{(profile \var{source-object})}
 \returns unspecified
@@ -2978,7 +3050,7 @@ A \scheme{profile} form has the effect of accounting to the source
 position identified by \var{source-object} the number of times the
 \scheme{profile} form is executed.
 Profile forms are generated implicitly by the expander for source
-expressions in annorated input, e.g., input read by the compiler or
+expressions in annotated input, e.g., input read by the compiler or
 interpreter from a Scheme source file, so this form is typically
 useful only when unannotated source code is produced by the front
 end for some language that targets Scheme.
@@ -3007,6 +3079,17 @@ that should be profiled.
 \noindent
 Calling this procedure causes profile information to be cleared, i.e.,
 the counts associated with each section of code are set to zero.
+
+%----------------------------------------------------------------------------
+\entryheader
+\formdef{profile-release-counters}{\categoryprocedure}{(profile-release-counters)}
+\returns unspecified
+\listlibraries
+\endentryheader
+
+\noindent
+Calling this procedure causes profile information associated with reclaimed
+code objects to be dropped.
 
 %----------------------------------------------------------------------------
 \entryheader
@@ -3115,7 +3198,7 @@ frequently executed code.
 This value of this parameter must be a string or \scheme{#f}.
 If it is a string, the string should contain an HTML cascading style sheet (CSS)
 color specifier.
-If the parameter is set to string, \scheme{profile-dump-html} includes line numbers
+If the parameter is set to a string, \scheme{profile-dump-html} includes line numbers
 in its html rendering of each source file, using the specified color.
 If the parameter is set to \scheme{#f}, no line numbers are included.
 
@@ -3132,7 +3215,7 @@ This procedure produces a dump of all
 profile information present in \var{dump}, which defaults to
 the value returned by \scheme{profile-dump}.
 It returns a list of entries, each of which is itself a list containing the
-following elements identify one block of code and how many times it
+following elements identifying one block of code and how many times it
 has been executed.
 
 \begin{itemize}
@@ -3479,8 +3562,8 @@ If the current caf\'e is the original caf\'e, or if \scheme{exit}
 is called from a script, \scheme{exit} exits from Scheme.
 In this case, the exit code for the Scheme process is 0 if
 no arguments were supplied or if the first argument is void,
-the value of the first argument
-if it is a 32-bit exact integer, and -1 otherwise.
+the value of the first argument cast to a C int if
+it is an exact integer of the host machine's bit width, and 1 otherwise.
 
 %----------------------------------------------------------------------------
 \entryheader
@@ -3984,15 +4067,25 @@ It must be an exact integer in the range $-86400$ to
 $+86400$, inclusive and defaults to the local time-zone offset.
 UTC may be obtained by passing an offset of zero.
 
+If \var{offset} is not provided, then the current time zone's offset
+is used, and \scheme{date-dst?} and \scheme{date-zone-name} report
+information about the time zone. If \var{offset} is provided, then
+\scheme{date-dst?} and \scheme{date-zone-name} on the resulting date
+object produce \scheme{#f}.
+
 The following examples assume the local time zone is EST.
 
 \schemedisplay
 (current-date) ;=> #<date Thu Dec 27 23:23:20 2007>
 (current-date 0) ;=> #<date Fri Dec 28 04:23:20 2007>
+
+(date-zone-name (current-date)) ;=> "EST" \var{or other system-provided string}
+(date-zone-name (current-date 0)) ;=> #f
 \endschemedisplay
 
 %----------------------------------------------------------------------------
 \entryheader
+\formdef{make-date}{\categoryprocedure}{(make-date \var{nsec} \var{sec} \var{min} \var{hour} \var{day} \var{mon} \var{year})}
 \formdef{make-date}{\categoryprocedure}{(make-date \var{nsec} \var{sec} \var{min} \var{hour} \var{day} \var{mon} \var{year} \var{offset})}
 \returns a date object
 \listlibraries
@@ -4015,9 +4108,18 @@ as described above.
 It must be an exact integer in the range $-86400$ to $+86400$, inclusive.
 UTC may be specified by passing an offset of zero.
 
+If \var{offset} is not provided, then the current time zone's offset
+is used, and \scheme{date-dst?} and \scheme{date-zone-name} report
+information about the time zone. If \var{offset} is provided, then
+\scheme{date-dst?} and \scheme{date-zone-name} on the resulting date
+object produce \scheme{#f}.
+
 \schemedisplay
 (make-date 0 0 0 0 1 1 1970 0) ;=> #<date Thu Jan  1 00:00:00 1970>
 (make-date 0 30 7 9 23 9 2007 -14400) ;=> #<date Sun Sep 23 09:07:30 2007>
+
+(date-zone-name (make-date 0 30 7 9 23 9 2007 -14400)) ;=> #f
+(string? (date-zone-name (make-date 0 30 7 9 23 9 2007))) ;=> #t
 \endschemedisplay
 
 %----------------------------------------------------------------------------
@@ -4099,6 +4201,32 @@ d2 ;=> #<date Sun Sep 23 09:07:30 2007>
 
 %----------------------------------------------------------------------------
 \entryheader
+\formdef{date-dst?}{\categoryprocedure}{(date-dst? \var{date})}
+\returns whether \var{date} is in Daylight Saving Time
+\formdef{date-zone-name}{\categoryprocedure}{(date-zone-name \var{date})}
+\returns \scheme{#f} or a string naming the time zone of \var{date}
+\listlibraries
+\endentryheader
+
+These procedures report time-zone information for
+the date represented by \var{date} for a date object that
+is constructed without an explicit time-zone offset. When
+a date object is created instead with explicit time-zone offset,
+these procedures produce \scheme{#f}.
+
+Daylight Saving Time status for the current time zone and a name
+string for the time zone are computed using platform-specific routines.
+In particular, the format of the zone name is platform-specific.
+
+\schemedisplay
+(define d (make-date 0 30 7 9 23 9 2007))
+(date-zone-offset d) ;=> -14400 \var{assuming Eastern U.S. time zone}
+(date-dst? d) ;=> #t
+(date-zone-name d) ;=> "EDT" \var{or some system-provided string}
+\endschemedisplay
+
+%----------------------------------------------------------------------------
+\entryheader
 \formdef{time-utc->date}{\categoryprocedure}{(time-utc->date \var{time})}
 \formdef{time-utc->date}{\categoryprocedure}{(time-utc->date \var{time} \var{offset})}
 \returns a date object corresponding to \var{time}
@@ -4118,6 +4246,12 @@ as described at the beginning of this section.
 It must be an exact integer in the range $-86400$ to
 $+86400$, inclusive and defaults to the local time-zone offset.
 UTC may be obtained by passing an offset of zero.
+
+If \var{offset} is not provided to \scheme{time-utc->date}, then the current time zone's offset
+is used, and \scheme{date-dst?} and \scheme{date-zone-name} report
+information about the time zone. If \var{offset} is provided, then
+\scheme{date-dst?} and \scheme{date-zone-name} on the resulting date
+object produce \scheme{#f}.
 
 \schemedisplay
 (define d (make-date 0 30 7 9 23 9 2007 -14400))
@@ -4283,7 +4417,7 @@ in bytes, including not only the bytes occupied for Scheme objects
 but also various forms of overhead, including fragmentation and
 reserved but not currently occupied memory, and is thus an accurate
 measure of the amount of heap memory currently reserved from the
-the operating system for the current process.
+operating system for the current process.
 
 %----------------------------------------------------------------------------
 \entryheader
@@ -4957,7 +5091,7 @@ environment of the process,
 where it is available to the current process (e.g., via \var{getenv})
 and any spawned processes.
 The key and value are copied into storage allocated outside of
-the Scheme heap; this space is never reclaimed.
+the Scheme heap; this space is never reclaimed on non-Windows systems.
 
 \schemedisplay
 (putenv "SCHEME" "rocks!")
